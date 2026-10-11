@@ -1,6 +1,6 @@
 from priority import calculate_priority
 
-def create_ticket(title, category, urgency, affected_users):
+def create_ticket(title, category, urgency, affected_users, new_id):
 
     title = title.strip()
     
@@ -27,7 +27,7 @@ def create_ticket(title, category, urgency, affected_users):
     priority = calculate_priority(urgency, affected_users)
 
     my_ticket = {
-    "id": "T001",
+    "id": new_id,
     "title": title,
     "category": category,
     "urgency": urgency,
@@ -37,10 +37,12 @@ def create_ticket(title, category, urgency, affected_users):
     "assigned_to": None
     }
 
-# This is a fake to test our generate_ticket_id function
+    return my_ticket
+
+# This is fake to test our generate_ticket_id function
 records = [
     {
-        "id": "T001",
+        "id": "T007",
         "title": "Wi-Fi is down",
         "category": "Network",
         "urgency": "high",
@@ -60,7 +62,7 @@ records = [
         "assigned_to": None
     },
     {
-        "id": "T007",
+        "id": "T001",
         "title": "Cannot access learning platform",
         "category": "Software",
         "urgency": "low",
@@ -89,4 +91,13 @@ def generate_ticket_id(records):
     new_id = f"T{max_id + 1:03d}" 
     return new_id
 
+
+def create_and_store_ticket(records, title, category, urgency, affected_users):
+    new_id = generate_ticket_id(records)
+    new_ticket = create_ticket(title, category, urgency, affected_users, new_id)
+    records.append(new_ticket)
+    return new_ticket
+
+print(create_and_store_ticket(records, "Faulty mouse", "network", "high", 4))
+print(records[-1])
 print(generate_ticket_id(records))
