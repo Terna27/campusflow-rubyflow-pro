@@ -37,10 +37,41 @@ def create_ticket(title, category, urgency, affected_users):
     "assigned_to": None
     }
 
-    return my_ticket
+# This is a fake to test our generate_ticket_id function
+records = [
+    {
+        "id": "T001",
+        "title": "Wi-Fi is down",
+        "category": "Network",
+        "urgency": "high",
+        "affected_users": 15,
+        "priority": "critical",
+        "status": "open",
+        "assigned_to": None
+    },
+    {
+        "id": "T003",
+        "title": "Laptop is faulty",
+        "category": "Hardware",
+        "urgency": "medium",
+        "affected_users": 2,
+        "priority": "medium",
+        "status": "open",
+        "assigned_to": None
+    },
+    {
+        "id": "T007",
+        "title": "Cannot access learning platform",
+        "category": "Software",
+        "urgency": "low",
+        "affected_users": 1,
+        "priority": "low",
+        "status": "open",
+        "assigned_to": None
+    }
+]
 
-
-records = []
+# records = []
 # print(create_ticket("", "network", "high", 15))
 # print(create_ticket("Wi-Fi is down", "finance", "high", 15))
 # print(create_ticket("Wi-Fi is down", "network", "high", "five"))
