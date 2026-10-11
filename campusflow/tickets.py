@@ -44,10 +44,12 @@ def create_ticket(title, category, urgency, affected_users, records=None):
     return my_ticket
 
 
-# This is a fake to test our generate_ticket_id function
+    return my_ticket
+
+# This is fake to test our generate_ticket_id function
 records = [
     {
-        "id": "T001",
+        "id": "T007",
         "title": "Wi-Fi is down",
         "category": "Network",
         "urgency": "high",
@@ -67,7 +69,7 @@ records = [
         "assigned_to": None
     },
     {
-        "id": "T007",
+        "id": "T001",
         "title": "Cannot access learning platform",
         "category": "Software",
         "urgency": "low",
