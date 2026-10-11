@@ -1,6 +1,10 @@
-from priority import calculate_priority
+try:
+    from campusflow.priority import calculate_priority
+except ImportError:
+    from priority import calculate_priority
 
-def create_ticket(title, category, urgency, affected_users):
+
+def create_ticket(title, category, urgency, affected_users, records=None):
 
     title = title.strip()
     
@@ -26,8 +30,9 @@ def create_ticket(title, category, urgency, affected_users):
     
     priority = calculate_priority(urgency, affected_users)
 
+    ticket_id = generate_ticket_id(records) if records is not None else "T001"
     my_ticket = {
-    "id": "T001",
+    "id": ticket_id,
     "title": title,
     "category": category,
     "urgency": urgency,
@@ -36,6 +41,8 @@ def create_ticket(title, category, urgency, affected_users):
     "status": "open",
     "assigned_to": None
     }
+    return my_ticket
+
 
 # This is a fake to test our generate_ticket_id function
 records = [
@@ -89,4 +96,5 @@ def generate_ticket_id(records):
     new_id = f"T{max_id + 1:03d}" 
     return new_id
 
-print(generate_ticket_id(records))
+if __name__ == "__main__":
+    print(generate_ticket_id(records))
