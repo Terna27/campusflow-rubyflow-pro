@@ -159,3 +159,133 @@ During repository inspection of Engineer A's code in `campusflow/tickets.py` and
 5. **Bare Assertions in `tests/test_priority.py`**:
    - Top-level `assert` statements fail with `NameError` under `python -m unittest discover` because `calculate_priority` is not imported and assertions are not inside a `unittest.TestCase`.
    - Proposed safe solution: Wrap assertions in a standard `unittest.TestCase` class with `from campusflow.priority import calculate_priority`.
+
+---
+
+## 5. CampusFlow Pro Architecture: Developer A Specifications & Shared Contracts
+
+### 5.1 Deterministic UTC Time Handling (`campusflow/time_utils.py`)
+
+- **Field Schema Extensions on Ticket**:
+  - `created_at`: Canonical ISO-8601 UTC string (e.g., `"2026-10-14T10:00:00Z"`).
+  - `updated_at`: Canonical ISO-8601 UTC string.
+  - `due_at`: Canonical ISO-8601 UTC string calculated from priority SLA duration.
+  - `escalation_cycle`: Non-negative integer initialized to `0`.
+- **Timezone Awareness & Naive Rejection**:
+  - All internal calculations use timezone-aware `datetime` objects (`timezone.utc`).
+  - Naive datetimes (where `tzinfo is None` or `tzinfo.utcoffset is None`) and naive ISO strings (e.g. `"2026-10-14T12:00:00"`) are strictly rejected with a descriptive `ValueError`.
+  - Non-UTC timezone offsets (e.g. `+02:00`) are parsed and normalized into UTC.
+- **Clock Injection**:
+  - Every time-dependent operation accepts an optional injected `now` parameter (`datetime | str | None`).
+  - When `now` is omitted, the UTC system clock is resolved exactly once per operation (`resolve_now(now)`).
+  - Automated tests inject static timestamps, eliminating `time.sleep()` calls and ensuring determinism.
+- **Bidirectional Equality (`UTCTimestamp`)**:
+  - Inherits from `str` to serialize directly with `json.dump()`.
+  - Implements `__eq__` so that comparisons against timezone-aware `datetime` objects evaluate to `True` when representing the same instant.
+
+---
+
+### 5.2 SLA Due Date Calculation & Overdue Detection (`campusflow/sla.py`)
+
+- **SLA Durations by Priority**:
+  - `critical`: 60 minutes (1 hour)
+  - `high`: 240 minutes (4 hours)
+  - `medium`: 1440 minutes (24 hours)
+  - `low`: 2880 minutes (48 hours)
+- **`calculate_due_at(priority, cycle_start)`**:
+  - Computes: `cycle_start + SLA_DURATIONS_MINUTES[priority]`.
+  - Accepts priority as string (`"critical"`, `"high"`, `"medium"`, `"low"`) or as a ticket dictionary (extracting `ticket["priority"]` and `ticket["created_at"]` / `ticket["updated_at"]`).
+  - Returns `UTCTimestamp` formatted in ISO-8601 UTC ending with `Z`.
+  - Rejects unknown priorities or naive timestamps with `ValueError`.
+- **`is_overdue(ticket, now)`**:
+  - Returns `False` if `ticket["status"] == "resolved"`.
+  - Returns `False` if `due_at` is absent or `now <= due_at`.
+  - Returns `True` if ticket is active (`open` or `in_progress`) and `now > due_at`.
+- **`escalate_overdue(tickets, events, now, actor)`**:
+  - Resolves UTC clock once for the batch operation.
+  - Scans all tickets with `is_overdue(ticket, now)`.
+  - Increments `escalation_cycle` by 1.
+  - Updates `updated_at` to `now`.
+  - Recalculates `due_at` from `now` based on ticket priority SLA.
+  - Appends an audit event to `events` with action `"escalate"`.
+  - Returns list of escalated tickets.
+
+---
+
+### 5.3 Version-2 JSON Persistence Architecture (`campusflow/storage.py`)
+
+- **Version-2 Container Format**:
+  ```json
+  {
+    "version": 2,
+    "tickets": [ ... ],
+    "events": [ ... ]
+  }
+  ```
+- **Defensive Validation Rules (`validate_ticket_record`, `validate_event`)**:
+  - Root container must be a dictionary specifying `"version": 2` with `"tickets"` and `"events"` lists (or a list for v1 backward compatibility).
+  - Validates ticket required fields (`id`, `title`, `category`, `urgency`, `affected_users`, `priority`, `status`).
+  - Strictly enforces positive integer `affected_users` (`>= 1`, not `bool`, not negative/zero).
+  - Validates explicit ISO-8601 UTC timestamps on `created_at`, `updated_at`, `due_at`.
+  - Enforces global ticket ID uniqueness and event ID uniqueness across collections.
+  - Missing file allows clean startup returning `([], [])`.
+  - Corrupt or malformed JSON raises `ValueError` immediately without silent data erasure.
+- **Atomic File Replacement**:
+  - Writes to a temporary file in the target directory using `tempfile.NamedTemporaryFile`.
+  - Flushes and syncs file descriptor (`os.fsync`) to physical disk.
+  - Atomically replaces target via `os.replace`.
+- **Backward Compatibility**:
+  - `load_data`: Supports loading legacy Version-1 files (returns `(tickets, [])`) and Version-2 files (returns `(tickets, events)`).
+  - `load_tickets`: Seamlessly reads legacy v1 lists and extracts `tickets` from v2 container.
+  - `save_data`: Atomically saves Version-2 payload with defensive validation.
+  - `save_tickets`: Preserved for legacy Version-1 list-only callers.
+
+---
+
+### 5.4 Ticket & Event ID Continuity (`campusflow/tickets.py`, `campusflow/events.py`)
+
+- **Ticket IDs**: `generate_ticket_id(records)` parses numeric suffixes across existing tickets and returns `f"T{max_id + 1:03d}"` (defaults to `"T001"` if empty).
+- **Event IDs**: `generate_event_id(events)` parses numeric suffixes across existing events and returns `f"E{max_id + 1:03d}"` (defaults to `"E001"` if empty).
+- **Session Continuity**: Both generators preserve the highest sequential identifier after loading from disk, preventing ID collision or duplication across restarts.
+
+---
+
+### 5.5 Developer B Integration Contract & Reopening Hooks
+
+To coordinate between Developer A (Core/SLA/Persistence) and Developer B (Workflow/History/CLI), the following shared integration contracts are established:
+
+1. **Shared Event Schema**:
+   ```python
+   {
+       "id": "E001",                   # String: sequential identifier via generate_event_id
+       "ticket_id": "T001",            # String: associated ticket ID
+       "action": "create",             # String: operation name ('create', 'assign', 'status_change', 'reopen', 'escalate')
+       "timestamp": "2026-10-14T10:00:00Z", # String: ISO-8601 UTC timestamp
+       "actor": "admin",               # String: user or system actor
+       "details": {}                   # Dict: operation metadata
+   }
+   ```
+2. **Event Helper Contract (`campusflow.events.record_event`)**:
+   - Developer B can record any operational history by invoking:
+     ```python
+     record_event(events, ticket_id=ticket["id"], action=action, actor=actor, timestamp=now, details={...})
+     ```
+3. **Creation Hook for Developer B**:
+   - When Developer B processes ticket creation, call `create_ticket(..., now=now)`.
+   - `create_ticket` automatically initializes `created_at`, `updated_at`, `due_at`, and `escalation_cycle = 0`.
+   - Developer B then records the creation event:
+     ```python
+     record_event(events, ticket_id=ticket["id"], action="create", actor=actor, timestamp=ticket["created_at"], details={"priority": ticket["priority"]})
+     ```
+4. **Reopening Hook for Developer B**:
+   - When a resolved ticket is reopened via `reopen_ticket`:
+     - Ticket status transitions back to `"open"`.
+     - SLA window restarts: Developer B computes new deadline:
+       `ticket["due_at"] = calculate_due_at(ticket["priority"], cycle_start=now)`
+     - Ticket timestamp is updated:
+       `ticket["updated_at"] = format_utc_iso(now)`
+     - Reopening event is recorded:
+       ```python
+       record_event(events, ticket_id=ticket["id"], action="reopen", actor=actor, timestamp=format_utc_iso(now), details={"due_at": ticket["due_at"]})
+       ```
+
