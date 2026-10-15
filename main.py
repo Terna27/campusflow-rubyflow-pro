@@ -1,6 +1,7 @@
 """CampusFlow: Command-line Technical Support Ticket Management System."""
 
 import sys
+from campusflow.duplicates import detect_duplicates
 from campusflow.storage import load_tickets, save_tickets, DEFAULT_DATA_PATH
 from campusflow.tickets import create_ticket
 from campusflow.workflow import (
@@ -64,6 +65,30 @@ def handle_create_ticket(tickets: list[dict], data_path: str) -> None:
         print(f"[Error] Failed to create ticket: {err}")
         return
 
+    duplicates = detect_duplicates(
+        tickets,
+        new_ticket["category"],
+        new_ticket["title"]
+    )
+
+    if duplicates:
+        print("\n[WARNING] Possible duplicate ticket detected!")
+        print("Matching ticket IDs:", ", ".join(duplicates))
+
+        while True:
+            confirmation = input(
+                "Do you still want to create this ticket? (yes/no): "
+            ).strip().lower()
+
+            if confirmation == "yes":
+                break
+
+            elif confirmation == "no":
+                print("[Cancelled] Ticket was not created.")
+                return
+
+            else:
+                print("[Error] Please enter yes or no.")
     tickets.append(new_ticket)
     save_tickets(tickets, data_path)
     print(f"[Success] Ticket {new_ticket.get('id')} created successfully with priority '{new_ticket.get('priority')}'.")
