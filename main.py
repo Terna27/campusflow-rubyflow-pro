@@ -1,8 +1,12 @@
 """CampusFlow: Command-line Technical Support Ticket Management System."""
 
 import sys
-from campusflow.duplicates import detect_duplicates
-from campusflow.storage import load_tickets, save_tickets, DEFAULT_DATA_PATH
+from campusflow.storage import (
+    load_data,
+    save_data,
+    DEFAULT_DATA_PATH,
+)
+from campusflow.knowledge_lab import run_knowledge_lab
 from campusflow.tickets import create_ticket
 from campusflow.workflow import (
     assign_ticket,
@@ -11,6 +15,7 @@ from campusflow.workflow import (
     get_work_queue,
 )
 from campusflow.reports import generate_report
+from campusflow.sla import escalate_overdue
 
 
 def print_ticket_summary(ticket: dict) -> None:
@@ -20,7 +25,12 @@ def print_ticket_summary(ticket: dict) -> None:
     status = ticket.get("status", "N/A")
     assigned = ticket.get("assigned_to") or "Unassigned"
     title = ticket.get("title", "No Title")
-    print(f"[{tid}] ({pri}) [{status}] Assigned: {assigned} | {title}")
+    extra = ""
+    if "due_at" in ticket:
+        extra += f" | Due: {ticket.get('due_at')}"
+    if "escalation_cycle" in ticket and ticket.get("escalation_cycle", 0) > 0:
+        extra += f" | Esc: #{ticket.get('escalation_cycle')}"
+    print(f"[{tid}] ({pri}) [{status}] Assigned: {assigned} | {title}{extra}")
 
 
 def print_ticket_details(ticket: dict) -> None:
@@ -34,10 +44,18 @@ def print_ticket_details(ticket: dict) -> None:
     print(f"Priority:         {ticket.get('priority')}")
     print(f"Status:           {ticket.get('status')}")
     print(f"Assigned To:      {ticket.get('assigned_to') or 'Unassigned'}")
+    if "created_at" in ticket:
+        print(f"Created At (UTC): {ticket.get('created_at')}")
+    if "updated_at" in ticket:
+        print(f"Updated At (UTC): {ticket.get('updated_at')}")
+    if "due_at" in ticket:
+        print(f"Due At (UTC):     {ticket.get('due_at')}")
+    if "escalation_cycle" in ticket:
+        print(f"Escalation Cycle: {ticket.get('escalation_cycle')}")
     print("=" * 50)
 
 
-def handle_create_ticket(tickets: list[dict], data_path: str) -> None:
+def handle_create_ticket(tickets: list[dict], events: list[dict], data_path: str) -> None:
     """Collect inputs and create a new support ticket."""
     print("\n--- Create New Ticket ---")
     title = input("Enter ticket title/description: ")
@@ -90,8 +108,11 @@ def handle_create_ticket(tickets: list[dict], data_path: str) -> None:
             else:
                 print("[Error] Please enter yes or no.")
     tickets.append(new_ticket)
-    save_tickets(tickets, data_path)
-    print(f"[Success] Ticket {new_ticket.get('id')} created successfully with priority '{new_ticket.get('priority')}'.")
+    save_data(tickets, events, data_path)
+    print(
+        f"[Success] Ticket {new_ticket.get('id')} created successfully with priority "
+        f"'{new_ticket.get('priority')}' and SLA deadline '{new_ticket.get('due_at')}'."
+    )
 
 
 def handle_list_tickets(tickets: list[dict]) -> None:
@@ -119,20 +140,20 @@ def handle_view_ticket(tickets: list[dict]) -> None:
     print_ticket_details(match)
 
 
-def handle_assign_ticket(tickets: list[dict], data_path: str) -> None:
+def handle_assign_ticket(tickets: list[dict], events: list[dict], data_path: str) -> None:
     """Assign an existing ticket to a staff member."""
     print("\n--- Assign Ticket ---")
     tid = input("Enter ticket ID to assign: ").strip()
     staff = input("Enter staff member name: ")
     try:
         updated = assign_ticket(tickets, tid, staff)
-        save_tickets(tickets, data_path)
+        save_data(tickets, events, data_path)
         print(f"[Success] Ticket {tid} assigned to '{updated.get('assigned_to')}'.")
     except ValueError as err:
         print(f"[Error] Assignment failed: {err}")
 
 
-def handle_update_status(tickets: list[dict], data_path: str) -> None:
+def handle_update_status(tickets: list[dict], events: list[dict], data_path: str) -> None:
     """Update lifecycle status of an active ticket."""
     print("\n--- Update Ticket Status ---")
     tid = input("Enter ticket ID: ").strip()
@@ -140,19 +161,19 @@ def handle_update_status(tickets: list[dict], data_path: str) -> None:
     new_status = input("Enter new status: ").strip()
     try:
         updated = update_status(tickets, tid, new_status)
-        save_tickets(tickets, data_path)
+        save_data(tickets, events, data_path)
         print(f"[Success] Ticket {tid} status updated to '{updated.get('status')}'.")
     except ValueError as err:
         print(f"[Error] Status update failed: {err}")
 
 
-def handle_reopen_ticket(tickets: list[dict], data_path: str) -> None:
+def handle_reopen_ticket(tickets: list[dict], events: list[dict], data_path: str) -> None:
     """Explicitly reopen a resolved ticket back to open."""
     print("\n--- Reopen Resolved Ticket ---")
     tid = input("Enter resolved ticket ID to reopen: ").strip()
     try:
         updated = reopen_ticket(tickets, tid)
-        save_tickets(tickets, data_path)
+        save_data(tickets, events, data_path)
         print(f"[Success] Ticket {tid} reopened to status '{updated.get('status')}'.")
     except ValueError as err:
         print(f"[Error] Reopening failed: {err}")
@@ -195,10 +216,27 @@ def handle_reports(tickets: list[dict]) -> None:
         print(f"  - {pri:<12}: {count}")
 
 
+def handle_escalate_overdue(tickets: list[dict], events: list[dict], data_path: str) -> None:
+    """Scan and escalate overdue active tickets."""
+    print("\n--- Escalate Overdue Tickets (SLA) ---")
+    actor = input("Enter operator/actor identity [system]: ").strip() or "system"
+    escalated = escalate_overdue(tickets, events, actor=actor)
+    save_data(tickets, events, data_path)
+    if not escalated:
+        print("[Info] No active tickets are currently overdue.")
+    else:
+        print(f"[Success] Escalated {len(escalated)} overdue ticket(s):")
+        for t in escalated:
+            print(
+                f"  - [{t.get('id')}] Priority: {t.get('priority')} | "
+                f"New Due At: {t.get('due_at')} | Cycle: #{t.get('escalation_cycle')}"
+            )
+
+
 def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
     """Run the main CampusFlow CLI interactive menu."""
     try:
-        tickets = load_tickets(data_path)
+        tickets, events = load_data(data_path)
     except ValueError as err:
         print(f"[FATAL] Data loading error: {err}")
         print("Application exiting to prevent overwriting corrupted data.")
@@ -218,35 +256,41 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         print("6. Reopen Resolved Ticket")
         print("7. View Work Queue")
         print("8. View Reports")
-        print("9. Exit")
+        print("9. Escalate Overdue Tickets")
+        print("10. Engineering Knowledge Lab")
+        print("11. Exit")
 
         try:
-            choice = input("\nSelect an option (1-9): ").strip()
+            choice = input("\nSelect an option (1-11): ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting CampusFlow. Goodbye!")
             break
 
         if choice == "1":
-            handle_create_ticket(tickets, data_path)
+            handle_create_ticket(tickets, events, data_path)
         elif choice == "2":
             handle_list_tickets(tickets)
         elif choice == "3":
             handle_view_ticket(tickets)
         elif choice == "4":
-            handle_assign_ticket(tickets, data_path)
+            handle_assign_ticket(tickets, events, data_path)
         elif choice == "5":
-            handle_update_status(tickets, data_path)
+            handle_update_status(tickets, events, data_path)
         elif choice == "6":
-            handle_reopen_ticket(tickets, data_path)
+            handle_reopen_ticket(tickets, events, data_path)
         elif choice == "7":
             handle_work_queue(tickets)
         elif choice == "8":
             handle_reports(tickets)
         elif choice == "9":
+            handle_escalate_overdue(tickets, events, data_path)
+        elif choice == "10":
+            run_knowledge_lab()
+        elif choice in ("11", "exit", "quit", "q"):
             print("Exiting CampusFlow. Goodbye!")
             break
         else:
-            print("[Invalid Option] Please enter a number between 1 and 9.")
+            print("[Invalid Option] Please enter a number between 1 and 11.")
 
 
 if __name__ == "__main__":
