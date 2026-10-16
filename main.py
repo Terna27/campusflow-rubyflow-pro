@@ -265,7 +265,7 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         elif choice == "7":
             handle_work_queue(tickets)
         elif choice == "8":
-            handle_reports(tickets)
+            handle_reports(tickets)        
         elif choice == "9":
             handle_escalate_overdue(tickets, events, data_path)
         elif choice == "10":
