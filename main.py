@@ -6,6 +6,7 @@ from campusflow.storage import (
     save_data,
     DEFAULT_DATA_PATH,
 )
+from campusflow.knowledge_lab import run_knowledge_lab
 from campusflow.tickets import create_ticket
 from campusflow.workflow import (
     assign_ticket,
@@ -346,7 +347,7 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         print("7. View Work Queue")
         print("8. View Reports")
         print("9. Escalate Overdue Tickets")
-        print("10. View Audit History")
+        print("10. Engineering Knowledge Lab")
         print("11. Exit")
 
         try:
@@ -374,12 +375,12 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         elif choice == "9":
             handle_escalate_overdue(tickets, events, data_path)
         elif choice == "10":
-            handle_audit_history(events)    
+            run_knowledge_lab()
         elif choice in ("11", "exit", "quit", "q"):
             print("Exiting CampusFlow. Goodbye!")
             break
         else:
-            print("[Invalid Option] Please enter a number between 1 and 10.")
+            print("[Invalid Option] Please enter a number between 1 and 11.")
 
 
 if __name__ == "__main__":
