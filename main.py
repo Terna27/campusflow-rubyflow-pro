@@ -16,6 +16,7 @@ from campusflow.workflow import (
 )
 from campusflow.reports import generate_report
 from campusflow.sla import escalate_overdue
+from campusflow.events import record_event
 
 
 def print_ticket_summary(ticket: dict) -> None:
@@ -82,8 +83,21 @@ def handle_create_ticket(tickets: list[dict], events: list[dict], data_path: str
     except ValueError as err:
         print(f"[Error] Failed to create ticket: {err}")
         return
+    actor = input("Enter your name: ").strip()
 
     tickets.append(new_ticket)
+
+    record_event(
+        events,
+        ticket_id=new_ticket["id"],
+        action="create",
+        actor=actor or "system",
+        details={
+            "before_status": None,
+            "after_status": new_ticket["status"]
+        }
+    )
+
     save_data(tickets, events, data_path)
     print(
         f"[Success] Ticket {new_ticket.get('id')} created successfully with priority "
@@ -115,19 +129,47 @@ def handle_view_ticket(tickets: list[dict]) -> None:
         return
     print_ticket_details(match)
 
-
 def handle_assign_ticket(tickets: list[dict], events: list[dict], data_path: str) -> None:
-    """Assign an existing ticket to a staff member."""
     print("\n--- Assign Ticket ---")
+
     tid = input("Enter ticket ID to assign: ").strip()
     staff = input("Enter staff member name: ")
+    actor = input("Enter your name: ").strip()
+
+    if not actor:
+        print("[Error] Actor name cannot be empty.")
+        return
+
     try:
+        ticket = next((t for t in tickets if t["id"] == tid), None)
+
+        if ticket is None:
+            raise ValueError("Ticket not found.")
+
+        before_status = ticket["status"]
+        previous_assignee = ticket.get("assigned_to")
+
         updated = assign_ticket(tickets, tid, staff)
+
+        record_event(
+            events,
+            ticket_id=tid,
+            action="assign",
+            actor=actor,
+            details={
+                "previous_assignee": previous_assignee,
+                "assigned_to": updated["assigned_to"],
+                "before_status": before_status,
+                "after_status": updated["status"]
+            }
+        )
+
         save_data(tickets, events, data_path)
+
         print(f"[Success] Ticket {tid} assigned to '{updated.get('assigned_to')}'.")
+
     except ValueError as err:
         print(f"[Error] Assignment failed: {err}")
-
 
 def handle_update_status(tickets: list[dict], events: list[dict], data_path: str) -> None:
     """Update lifecycle status of an active ticket."""
@@ -135,10 +177,38 @@ def handle_update_status(tickets: list[dict], events: list[dict], data_path: str
     tid = input("Enter ticket ID: ").strip()
     print("Allowed statuses: open, in_progress, resolved")
     new_status = input("Enter new status: ").strip()
+    actor = input("Enter your name: ").strip()
+
+    if not actor:
+        print("[Error] Actor name cannot be empty.")
+        return
+
     try:
+        ticket = next((t for t in tickets if t["id"] == tid), None)
+
+        if ticket is None:
+            raise ValueError("Ticket not found.")
+
+        before_status = ticket["status"]
+
         updated = update_status(tickets, tid, new_status)
+
+        action = "start" if updated["status"] == "in_progress" else "resolve"
+
+        record_event(
+            events,
+            ticket_id=tid,
+            action=action,
+            actor=actor,
+            details={
+                "before_status": before_status,
+                "after_status": updated["status"]
+            }
+        )
+
         save_data(tickets, events, data_path)
         print(f"[Success] Ticket {tid} status updated to '{updated.get('status')}'.")
+
     except ValueError as err:
         print(f"[Error] Status update failed: {err}")
 
@@ -217,6 +287,33 @@ def handle_escalate_overdue(tickets: list[dict], events: list[dict], data_path: 
                 f"New Due At: {t.get('due_at')} | Cycle: #{t.get('escalation_cycle')}"
             )
 
+def handle_audit_history(events: list[dict]) -> None:
+    print("\n--- Audit History ---")
+    ticket_id = input("Enter ticket ID (leave blank to view all): ").strip()
+
+    filtered_events = [
+        event for event in events
+        if not ticket_id or event["ticket_id"] == ticket_id
+    ]
+
+    if not filtered_events:
+        print("[Info] No audit history found.")
+        return
+
+    filtered_events.sort(key=lambda event: (event["timestamp"], event["id"]))
+
+    for event in filtered_events:
+        details = event.get("details", {})
+
+        print("-" * 50)
+        print(f"Event ID: {event['id']}")
+        print(f"Ticket ID: {event['ticket_id']}")
+        print(f"Action: {event['action']}")
+        print(f"Actor: {event['actor']}")
+        print(f"Timestamp: {event['timestamp']}")
+        print(f"Before Status: {details.get('before_status', 'N/A')}")
+        print(f"After Status: {details.get('after_status', 'N/A')}")
+        print(f"Details: {details}")
 
 def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
     """Run the main CampusFlow CLI interactive menu."""
