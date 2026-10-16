@@ -216,27 +216,19 @@ def handle_reopen_ticket(tickets: list[dict], events: list[dict], data_path: str
     """Explicitly reopen a resolved ticket back to open."""
     print("\n--- Reopen Resolved Ticket ---")
     tid = input("Enter resolved ticket ID to reopen: ").strip()
-    actor = input("Enter your name: ").strip()
-
-    if not actor:
-        print("[Error] Actor name cannot be empty.")
-        return
 
     try:
         updated = reopen_ticket(tickets, tid)
 
         record_event(
             events,
-            ticket_id=tid,
+            tid,
             action="reopen",
-            actor=actor,
-            details={
-                "before_status": "resolved",
-                "after_status": updated["status"]
-            }
+            actor="system"
         )
 
         save_data(tickets, events, data_path)
+
         print(f"[Success] Ticket {tid} reopened to status '{updated.get('status')}'.")
 
     except ValueError as err:
@@ -355,7 +347,6 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         except (KeyboardInterrupt, EOFError):
             print("\nExiting CampusFlow. Goodbye!")
             break
-
         if choice == "1":
             handle_create_ticket(tickets, events, data_path)
         elif choice == "2":
