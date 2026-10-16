@@ -6,8 +6,7 @@ from campusflow.storage import (
     save_data,
     DEFAULT_DATA_PATH,
 )
-
-from campusflow.attention_queue import display_sla_attention_queue
+from campusflow.knowledge_lab import run_knowledge_lab
 from campusflow.tickets import create_ticket
 from campusflow.workflow import (
     assign_ticket,
@@ -234,8 +233,8 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         print("7. View Work Queue")
         print("8. View Reports")
         print("9. Escalate Overdue Tickets")
-        print("10. Exit")
-        print("11. SLA Attention Queue")
+        print("10. Engineering Knowledge Lab")
+        print("11. Exit")
 
         try:
             choice = input("\nSelect an option (1-11): ").strip()
@@ -261,12 +260,14 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
             handle_reports(tickets)        
         elif choice == "9":
             handle_escalate_overdue(tickets, events, data_path)
-        elif choice == "11":
-            display_sla_attention_queue(tickets)
-        elif choice in ("10", "exit", "quit", "q"):
+        elif choice == "10":
+            run_knowledge_lab()
+        elif choice in ("11", "exit", "quit", "q"):
             print("Exiting CampusFlow. Goodbye!")
             break
         else:
             print("[Invalid Option] Please enter a number between 1 and 11.")
+
+
 if __name__ == "__main__":
     main_menu()
