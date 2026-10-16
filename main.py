@@ -6,6 +6,8 @@ from campusflow.storage import (
     save_data,
     DEFAULT_DATA_PATH,
 )
+from campusflow.metrics import display_enhanced_metrics
+from campusflow.events import record_event
 from campusflow.tickets import create_ticket
 from campusflow.workflow import (
     assign_ticket,
@@ -141,18 +143,27 @@ def handle_update_status(tickets: list[dict], events: list[dict], data_path: str
     except ValueError as err:
         print(f"[Error] Status update failed: {err}")
 
-
 def handle_reopen_ticket(tickets: list[dict], events: list[dict], data_path: str) -> None:
     """Explicitly reopen a resolved ticket back to open."""
     print("\n--- Reopen Resolved Ticket ---")
     tid = input("Enter resolved ticket ID to reopen: ").strip()
+
     try:
         updated = reopen_ticket(tickets, tid)
+
+        record_event(
+            events,
+            tid,
+            action="reopen",
+            actor="system"
+        )
+
         save_data(tickets, events, data_path)
+
         print(f"[Success] Ticket {tid} reopened to status '{updated.get('status')}'.")
+
     except ValueError as err:
         print(f"[Error] Reopening failed: {err}")
-
 
 def handle_work_queue(tickets: list[dict]) -> None:
     """Display active tickets ordered by priority and numeric ID."""
@@ -233,13 +244,12 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
         print("8. View Reports")
         print("9. Escalate Overdue Tickets")
         print("10. Exit")
-
+        print("11. Enhanced Metrics")
         try:
-            choice = input("\nSelect an option (1-10): ").strip()
+            choice = input("\nSelect an option (1-11): ").strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting CampusFlow. Goodbye!")
             break
-
         if choice == "1":
             handle_create_ticket(tickets, events, data_path)
         elif choice == "2":
@@ -258,12 +268,12 @@ def main_menu(data_path: str = DEFAULT_DATA_PATH) -> None:
             handle_reports(tickets)
         elif choice == "9":
             handle_escalate_overdue(tickets, events, data_path)
+        elif choice == "11":
+            display_enhanced_metrics(tickets, events)
         elif choice in ("10", "exit", "quit", "q"):
             print("Exiting CampusFlow. Goodbye!")
             break
         else:
-            print("[Invalid Option] Please enter a number between 1 and 10.")
-
-
+            print("[Invalid Option] Please enter a number between 1 and 11.")
 if __name__ == "__main__":
     main_menu()
