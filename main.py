@@ -82,11 +82,11 @@ def handle_create_ticket(tickets: list[dict], events: list[dict], data_path: str
     except ValueError as err:
         print(f"[Error] Failed to create ticket: {err}")
         return
-    
-        duplicates = detect_duplicates(
+
+    duplicates = detect_duplicates(
         tickets,
         new_ticket["category"],
-        new_ticket["title"]
+        new_ticket["title"],
     )
 
     if duplicates:
