@@ -6,7 +6,7 @@ from campusflow.storage import (
     save_data,
     DEFAULT_DATA_PATH,
 )
-from campusflow.knowledge_lab import run_knowledge_lab
+from campusflow.duplicates import detect_duplicates
 from campusflow.tickets import create_ticket
 from campusflow.workflow import (
     assign_ticket,
@@ -82,7 +82,29 @@ def handle_create_ticket(tickets: list[dict], events: list[dict], data_path: str
     except ValueError as err:
         print(f"[Error] Failed to create ticket: {err}")
         return
+    
+        duplicates = detect_duplicates(
+        tickets,
+        new_ticket["category"],
+        new_ticket["title"]
+    )
 
+    if duplicates:
+        print("\n[WARNING] Possible duplicate ticket detected!")
+        print("Matching ticket IDs:", ", ".join(duplicates))
+
+        while True:
+            confirmation = input(
+                "Do you still want to create this ticket? (yes/no): "
+            ).strip().lower()
+
+            if confirmation == "yes":
+                break
+            elif confirmation == "no":
+                print("[Cancelled] Ticket was not created.")
+                return
+            else:
+                print("[Error] Please enter yes or no.")
     tickets.append(new_ticket)
     save_data(tickets, events, data_path)
     print(
